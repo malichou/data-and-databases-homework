@@ -1,0 +1,561 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Homework 2: SQL in Python (Data and Databases 2019)\n",
+    "\n",
+    "The next four homework assignments will be in this iPython notebook format. Read the instructions as you go, and type in the necessary code--then run the cells to see if you got it right. Don't worry if you are new to python for this assignment--the only \"code\" you will be writing are SQL statements that you will paste into each myquery variable.\n",
+    "\n",
+    "\n",
+    "## The Challenges\n",
+    "\n",
+    "For this homework we will be using the tables we imported from the [UN data site](http://data.un.org/Explorer.aspx). You should already have `wind` and `solar` installed. As you will see, this homework asks that you find one more table of your choice from the UN's Energy statistics an import it into the the same database. [I have posted the instructions here](http://floatingmedia.com/columbia/csv_to_sql.html)\n",
+    "\n",
+    "These are relatively simple CSV files--the only really important columns are `country`, `year` and `usage`. But the tricky part is that most countries have multiple entries: one for every year the UN has been gathering data on that country. So most of these queries are going to ask you to get electrical usage results based on country and year. (Major hint: JOINs are going to need to be based on country AND year.)\n",
+    "\n",
+    "In the questions below, we focus on exploratory queries--with an emphasis on aggregates and joins. Read the questions carefully, and then write SQL statements that will get you the correct results. (You will want to explore tables and test out queries directly in the shell before you paste them into Python--the error handling for SQL in Python can be confusing, and there should be no errors in the prewritten Python parts of this document. Also, sometimes an error in Python will break your connection with the database--see conn.rollback() below for that solution.\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "First things first: Connect to database! \n",
+    "(Make sure the cell is selected, then go to the cell menubar and choose \"Run Cells\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "<class 'pg8000.core.Connection'>\n"
+     ]
+    }
+   ],
+   "source": [
+    "import pg8000\n",
+    "conn = pg8000.connect(database=\"unenergy2019\",user = \"kosmas\")\n",
+    "#conn = pg8000.connect(database=\"undata\")\n",
+    "print(type(conn))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "If the connection isn't working make sure that you have typed in the name of the database correctly, and your username as well. \n",
+    "\n",
+    "If you get an error when running one of the SQL cells below, run this conn.rollback() cell to restart your connection."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "conn.rollback()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Question 1: Simple(ish) Query \n",
+    "\n",
+    "Create a statement that searches for the top 15 countries for solar energy usage in 2014. So figure out first what table you are searching and what columns you need (you can figure out the columns by looking at the sample results below). Then you need to test by year so you only get results from 2014, and order it correctly.\n",
+    "\n",
+    "```\n",
+    "Germany 36056.0 mil\n",
+    "United States 25764.0 mil\n",
+    "Japan 22952.0 mil\n",
+    "Italy 22306.0 mil\n",
+    "China 15189.0 mil\n",
+    "Spain 13673.0 mil\n",
+    "France 5913.0 mil\n",
+    "India 5020.0 mil\n",
+    "United Kingdom 4054.0 mil\n",
+    "Australia 4010.0 mil\n",
+    "Greece 3792.0 mil\n",
+    "Belgium 2883.0 mil\n",
+    "Korea, Republic of 2557.0 mil\n",
+    "Czechia 2123.0 mil\n",
+    "Canada 2120.0 mil\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Australia 1174000.0 mil\n",
+      "Canada 357500.0 mil\n",
+      "Niger 325000.0 mil\n",
+      "Kazakhstan 285600.0 mil\n",
+      "Namibia 248200.0 mil\n",
+      "Russian Federation 216500.0 mil\n",
+      "United States 207400.0 mil\n",
+      "South Africa 175300.0 mil\n",
+      "Brazil 155100.0 mil\n",
+      "China 120000.0 mil\n",
+      "Ukraine 84800.0 mil\n",
+      "Uzbekistan 59400.0 mil\n",
+      "Germany 36056.0 mil\n",
+      "United States 25764.0 mil\n",
+      "Kazakhstan 23127.0 mil\n"
+     ]
+    }
+   ],
+   "source": [
+    "cursor = conn.cursor()\n",
+    "myquery = '''SELECT DISTINCT country, usage FROM solar WHERE year = 2014 ORDER BY usage DESC LIMIT 15'''\n",
+    "cursor.execute(myquery)\n",
+    "for row in cursor:\n",
+    "    print(row[0], row[1], \"mil\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Question 2: aggregate query\n",
+    "\n",
+    "Using avg(), get the average solar energy usage for each country, and it display only the countries with an average that is above 500 (million). (Remember for aggregates you need to use HAVING to test values, instead of WHERE). Make sure it is properly ordered like the results below, and wrap your avg column in round() to get round numbers:\n",
+    "\n",
+    "```\n",
+    "20251.0 China\n",
+    "8482.0 Germany\n",
+    "7018.0 India\n",
+    "6254.0 United States\n",
+    "5604.0 Japan\n",
+    "4508.0 Italy\n",
+    "3423.0 Spain\n",
+    "1651.0 South Africa\n",
+    "1439.0 France\n",
+    "1431.0 United Kingdom\n",
+    "1369.0 Greece\n",
+    "1237.0 Czechia\n",
+    "1212.0 Belgium\n",
+    "991.0 Australia\n",
+    "884.0 Thailand\n",
+    "789.0 Bulgaria\n",
+    "731.0 Chile\n",
+    "649.0 Honduras\n",
+    "633.0 Korea, Republic of\n",
+    "585.0 Romania\n",
+    "581.0 Israel\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "134700.0 Greenland\n",
+      "39600.0 Australia\n",
+      "36449.0 Kazakhstan\n",
+      "27538.0 Namibia\n",
+      "27018.0 Russian Federation\n",
+      "15869.0 Canada\n",
+      "15738.0 Niger\n",
+      "15031.0 South Africa\n",
+      "12928.0 China\n",
+      "12664.0 United States\n",
+      "12000.0 Central African Rep.\n",
+      "10679.0 Brazil\n",
+      "7857.0 Ukraine\n",
+      "7800.0 Zambia\n",
+      "7342.0 Uzbekistan\n",
+      "6851.0 Botswana\n",
+      "5798.0 Jordan\n",
+      "5564.0 Germany\n",
+      "5522.0 Japan\n",
+      "5104.0 Mongolia\n",
+      "4456.0 Italy\n",
+      "4433.0 India\n",
+      "3800.0 Somalia\n",
+      "3200.0 Viet Nam\n",
+      "2972.0 Germany, Fed. R. (former)\n",
+      "2920.0 Spain\n",
+      "2822.0 Algeria\n",
+      "2297.0 United Rep. of Tanzania\n",
+      "1896.0 Malawi\n",
+      "1521.0 Greece\n",
+      "1431.0 United Kingdom\n",
+      "1401.0 Turkey\n",
+      "1400.0 Zimbabwe\n",
+      "1210.0 France\n",
+      "945.0 Slovakia\n",
+      "909.0 Belgium\n",
+      "884.0 Thailand\n",
+      "775.0 Czechia\n",
+      "763.0 Chile\n",
+      "722.0 Argentina\n",
+      "666.0 Indonesia\n",
+      "649.0 Honduras\n",
+      "633.0 Korea, Republic of\n",
+      "581.0 Israel\n",
+      "567.0 Bulgaria\n",
+      "556.0 Gabon\n"
+     ]
+    }
+   ],
+   "source": [
+    "cursor = conn.cursor()\n",
+    "myquery = '''SELECT round(avg(usage)), country FROM solar GROUP BY country HAVING avg(usage) > 500 ORDER BY avg(usage) DESC;\n",
+    "'''\n",
+    "cursor.execute(myquery)\n",
+    "for row in cursor:\n",
+    "    print(row[0],row[1])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Question 3: aggregate query 2\n",
+    "\n",
+    "Get a list of countries whose Solar Energy data first started being collected in 2012. This is tricky to figure out, but the query should be pretty simple. The main thing you need to figure out is which aggregate function will find the earliest date, and then you need to test if year is 2012. And make it alphabetical by country.\n",
+    "\n",
+    "\n",
+    "```\n",
+    "2012 American Samoa\n",
+    "2012 Botswana\n",
+    "2012 Gabon\n",
+    "2012 Lao People's Dem. Rep.\n",
+    "2012 Lithuania\n",
+    "2012 Marshall Islands\n",
+    "2012 Mauritius\n",
+    "2012 Poland\n",
+    "2012 South Sudan\n",
+    "2012 St. Helena and Depend.\n",
+    "2012 St. Kitts-Nevis\n",
+    "2012 United Arab Emirates\n",
+    "2012 Venezuela (Bolivar. Rep.)\n",
+    "```\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true,
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "cursor = conn.cursor()\n",
+    "myquery = '''\n",
+    "\n",
+    "'''\n",
+    "cursor.execute(myquery)\n",
+    "for row in cursor:\n",
+    "    print(row[0], row[1])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Question 4: JOIN\n",
+    "\n",
+    "Get the usage of solar AND wind power for Germany for each year in the tables. There should be four columns total, and you will be joining on two criteria.\n",
+    "\n",
+    "(Please note that in the results below I am using Python to add in the strings \"solar:\" and \"wind:\")\n",
+    "\n",
+    "\n",
+    "\n",
+    "```\n",
+    "Germany 1991 \twind: 215.0 \tsolar 1.0\n",
+    "Germany 1992 \twind: 291.0 \tsolar 4.0\n",
+    "Germany 1993 \twind: 674.0 \tsolar 3.0\n",
+    "Germany 1994 \twind: 1428.0 \tsolar 7.0\n",
+    "Germany 1995 \twind: 1712.0 \tsolar 7.0\n",
+    "Germany 1996 \twind: 2078.0 \tsolar 12.0\n",
+    "Germany 1997 \twind: 3034.0 \tsolar 18.0\n",
+    "Germany 1998 \twind: 4593.0 \tsolar 35.0\n",
+    "Germany 1999 \twind: 5528.0 \tsolar 30.0\n",
+    "Germany 2000 \twind: 9352.0 \tsolar 60.0\n",
+    "Germany 2001 \twind: 10456.0 \tsolar 116.0\n",
+    "Germany 2002 \twind: 15856.0 \tsolar 188.0\n",
+    "Germany 2003 \twind: 18713.0 \tsolar 313.0\n",
+    "Germany 2004 \twind: 25509.0 \tsolar 557.0\n",
+    "Germany 2005 \twind: 27229.0 \tsolar 1282.0\n",
+    "Germany 2006 \twind: 30710.0 \tsolar 2220.0\n",
+    "Germany 2007 \twind: 39713.0 \tsolar 3075.0\n",
+    "Germany 2008 \twind: 40574.0 \tsolar 4420.0\n",
+    "Germany 2009 \twind: 38647.0 \tsolar 6584.0\n",
+    "Germany 2010 \twind: 37793.0 \tsolar 11729.0\n",
+    "Germany 2011 \twind: 48883.0 \tsolar 19599.0\n",
+    "Germany 2012 \twind: 50670.0 \tsolar 26380.0\n",
+    "Germany 2013 \twind: 51708.0 \tsolar 31010.0\n",
+    "Germany 2014 \twind: 57357.0 \tsolar 36056.0\n",
+    "Germany 2015 \twind: 79206.0 \tsolar 38726.0\n",
+    "Germany 2016 \twind: 78598.0 \tsolar 38098.0\n",
+    "```\n",
+    "\n",
+    "Hint: after the join you need to test that the country is Germany, then order by what?"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "cursor = conn.cursor()\n",
+    "myquery = '''\n",
+    "\n",
+    "'''\n",
+    "cursor.execute(myquery)\n",
+    "for row in cursor:\n",
+    "    print(row[0],row[1],\"\\twind:\",row[2],\"\\tsolar\",row[3])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Question 5: join with aggregates\n",
+    "\n",
+    "Get the average wind usage and solar usage for each country. Order your results by average solar usage, and show only the top ten countries.\n",
+    "\n",
+    "```\n",
+    "China wind: 125453.67 \tsolar: 20251.33\n",
+    "Germany wind: 26174.12 \tsolar: 8481.92\n",
+    "India wind: 31553.75 \tsolar: 7017.50\n",
+    "United States wind: 52771.48 \tsolar: 6254.37\n",
+    "Japan wind: 1906.48 \tsolar: 5604.00\n",
+    "Italy wind: 4556.04 \tsolar: 4507.56\n",
+    "Spain wind: 20005.67 \tsolar: 3423.07\n",
+    "South Africa wind: 1827.50 \tsolar: 1651.25\n",
+    "France wind: 5877.04 \tsolar: 1439.13\n",
+    "United Kingdom wind: 12232.22 \tsolar: 1430.72\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "cursor = conn.cursor()\n",
+    "myquery = '''\n",
+    "\n",
+    "'''\n",
+    "cursor.execute(myquery)\n",
+    "for row in cursor:\n",
+    "    print(row[0],\"wind:\",\"%.2f\" % row[1],\"\\tsolar:\",\"%.2f\" % row[2])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Question 6: same thing but slightly more complicated\n",
+    "\n",
+    "Get the average wind usage and solar usage for each country, FROM 2010 TO THE PRESENT. Order your results by average solar usage, and show only the top ten countries.\n",
+    "\n",
+    "```\n",
+    "China wind: 180028.00 \tsolar: 30278.75\n",
+    "Germany wind: 57745.00 \tsolar: 28799.71\n",
+    "United States wind: 161998.86 \tsolar: 21129.57\n",
+    "Japan wind: 5059.00 \tsolar: 19511.57\n",
+    "Italy wind: 13571.00 \tsolar: 17215.00\n",
+    "Spain wind: 48935.86 \tsolar: 11833.14\n",
+    "India wind: 31553.75 \tsolar: 7017.50\n",
+    "France wind: 16120.14 \tsolar: 4683.43\n",
+    "United Kingdom wind: 26305.14 \tsolar: 3667.00\n",
+    "Australia wind: 8569.29 \tsolar: 3260.29\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true,
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "cursor = conn.cursor()\n",
+    "myquery = '''\n",
+    "\n",
+    "'''\n",
+    "cursor.execute(myquery)\n",
+    "for row in cursor:\n",
+    "    print(row[0],\"wind:\",\"%.2f\" % row[1],\"\\tsolar:\",\"%.2f\" % row[2])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Question 7: Building a basic timeseries\n",
+    "\n",
+    "Step one: get a list of the first year of data and the most recent year of data for each country from the solar table. Limit the results to the first 15 with the oldest year and then in alphabetical order.\n",
+    "\n",
+    "```\n",
+    "Italy 1990 -- 2016\n",
+    "Japan 1990 -- 2016\n",
+    "Korea, Republic of 1990 -- 2016\n",
+    "Mexico 1990 -- 2016\n",
+    "Portugal 1990 -- 2016\n",
+    "Spain 1990 -- 2016\n",
+    "Switzerland 1990 -- 2016\n",
+    "United States 1990 -- 2016\n",
+    "Finland 1991 -- 2016\n",
+    "Germany 1991 -- 2016\n",
+    "Netherlands 1991 -- 2016\n",
+    "Canada 1992 -- 2016\n",
+    "Australia 1993 -- 2016\n",
+    "Austria 1993 -- 2016\n",
+    "Sweden 1993 -- 2016\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true,
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "cursor = conn.cursor()\n",
+    "myquery = '''\n",
+    "\n",
+    "'''\n",
+    "cursor.execute(myquery)\n",
+    "for row in cursor:\n",
+    "    print(row[0],row[1],\"--\",row[2])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Question 8: Building a basic timeseries\n",
+    "\n",
+    "Step two: Take that previous query, (order, limit and everything) and turn that into a subquery, and join the solar table on it twice, first to get the usage from the earliest date, next get the usage from the most recent date. Order it by the most usage from the most recent year.\n",
+    "\n",
+    "Note: to join at the same table twice, you need to alias the table (solar as sl1, solar as sl2). This is getting very challenging, so get as far as you can.\n",
+    "```\n",
+    "Japan 1990 -- 2016 usage change:  67.0 -- 50952.0\n",
+    "United States 1990 -- 2016 usage change:  666.0 -- 50334.0\n",
+    "Germany 1991 -- 2016 usage change:  1.0 -- 38098.0\n",
+    "Italy 1990 -- 2016 usage change:  4.0 -- 22104.0\n",
+    "Spain 1990 -- 2016 usage change:  6.0 -- 13649.0\n",
+    "Australia 1993 -- 2016 usage change:  11.0 -- 6209.0\n",
+    "Korea, Republic of 1990 -- 2016 usage change:  1.0 -- 5123.0\n",
+    "Canada 1992 -- 2016 usage change:  2.0 -- 3031.0\n",
+    "Netherlands 1991 -- 2016 usage change:  1.0 -- 1560.0\n",
+    "Switzerland 1990 -- 2016 usage change:  1.0 -- 1333.0\n",
+    "Austria 1993 -- 2016 usage change:  1.0 -- 1096.0\n",
+    "Portugal 1990 -- 2016 usage change:  1.0 -- 822.0\n",
+    "Mexico 1990 -- 2016 usage change:  1.0 -- 252.0\n",
+    "Sweden 1993 -- 2016 usage change:  1.0 -- 143.0\n",
+    "Finland 1991 -- 2016 usage change:  1.0 -- 17.0\n",
+    "```"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true,
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "cursor = conn.cursor()\n",
+    "myquery = '''\n",
+    "\n",
+    "'''  \n",
+    "cursor.execute(myquery)\n",
+    "for row in cursor:\n",
+    "    print(row[0],row[1],\"--\",row[2],\"usage change: \", row[3],\"--\",row[4])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Question 9: join with aggregates, new data\n",
+    "\n",
+    "Your final task: go back to the [UN data site](http://data.un.org/Explorer.aspx) and download another table of your choice from the energy statistics. [Full instructions here.](http://floatingmedia.com/columbia/csv_to_sql.html) Choose a table that has similar columns to the wind and energy tables, and input it into your database.  Make sure you test that everything is working in the shell before going back to Python.\n",
+    "\n",
+    "Now, write a query that joins the third table to the query you made in Question 5. Get the average use for each Energy type: Solar, Wind, and the table you chose. Order it by the energy type you chose (that column should come first after the country). And display the top 10 countries by the average of the energy type that you added, along with the averages for solar and wind.\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {
+    "collapsed": true
+   },
+   "outputs": [],
+   "source": [
+    "cursor = conn.cursor()\n",
+    "myquery = '''\n",
+    "\n",
+    "'''\n",
+    "cursor.execute(myquery)\n",
+    "for row in cursor:\n",
+    "    print(row[0],\"%.2f\" % row[1],\"%.2f\" % row[2],\"%.2f\" % row[3])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Great work! You're done."
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 1
+}
